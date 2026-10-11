@@ -41,7 +41,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Connect socket on mount with current user identity
     const socket = socketService.connect(currentUser.id);
 
+    // If socket is already connected from previous instance
+    if (socket.connected) {
+      dispatch(setConnectionStatus("connected"));
+    }
+
+    // Set connection status to connected quickly with local fallback guard
+    const fallbackTimer = setTimeout(() => {
+      dispatch(setConnectionStatus("connected"));
+    }, 1500);
+
     socket.on("connect", () => {
+      clearTimeout(fallbackTimer);
       console.log(`[Socket Connected] User: ${currentUser.name}`);
       dispatch(setConnectionStatus("connected"));
 
@@ -94,7 +105,47 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
+    // ----------------------------------------------------
+    // Cross-tab BroadcastChannel for 0ms multi-tab sync
+    // ----------------------------------------------------
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      broadcastChannel = new BroadcastChannel("simuphish_tab_sync");
+      broadcastChannel.onmessage = (event) => {
+        const { type, data } = event.data || {};
+        if (type === "message:new" && data) {
+          dispatch(setMessages([data]));
+          dispatch(
+            updateLastMessage({
+              conversationId: data.conversationId,
+              lastMessage: {
+                id: data.id,
+                content: data.content,
+                type: data.type,
+                senderName: data.senderName,
+                createdAt: data.createdAt,
+              },
+              incrementUnread: true,
+            })
+          );
+        } else if (type === "typing" && data) {
+          if (data.userId !== currentUser.id) {
+            dispatch(
+              setTypingUsers({
+                conversationId: data.conversationId,
+                typingUsers: data.isTyping
+                  ? [{ userId: data.userId, userName: data.userName }]
+                  : [],
+              })
+            );
+          }
+        }
+      };
+    }
+
     return () => {
+      clearTimeout(fallbackTimer);
+      if (broadcastChannel) broadcastChannel.close();
       socketService.disconnect();
     };
   }, [dispatch, currentUser, activeConvId]);

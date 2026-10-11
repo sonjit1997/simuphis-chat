@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "server": "node server/index.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:next": "next dev"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.13.0",

@@ -8,6 +8,7 @@ import {
 } from "@/store/selectors/chatSelectors";
 import { logout } from "@/store/slices/authSlice";
 import { setActiveConversationId } from "@/store/slices/conversationsSlice";
+import { getConversationDisplayMeta } from "@/utils/conversationUtils";
 import { formatConversationTime } from "@/utils/dateFormatters";
 import { LogOut, MessageSquare, Search, ShieldCheck, Users } from "lucide-react";
 import Image from "next/image";
@@ -29,9 +30,10 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const filteredConversations = conversations.filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredConversations = conversations.filter((c) => {
+    const meta = getConversationDisplayMeta(c, currentUser);
+    return meta.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   const handleDragOver = (e: React.DragEvent, convId: string) => {
     e.preventDefault();
@@ -53,7 +55,6 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
   };
 
   const handleLogout = async () => {
-    // Clear session cookie and storage
     document.cookie = "simuphish_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     await signOutFromFirebase();
     dispatch(logout());
@@ -95,13 +96,14 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
         </div>
       </div>
 
-      {/* Person-to-Person Conversation List */}
+      {/* Conversation List */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1">
         <div className="px-2 py-1 text-[11px] font-medium text-slate-500 uppercase tracking-wider">
           Direct Messages & Teams ({filteredConversations.length})
         </div>
 
         {filteredConversations.map((conv) => {
+          const meta = getConversationDisplayMeta(conv, currentUser);
           const isActive = conv.id === activeId;
           const isDropTarget = dragOverId === conv.id;
 
@@ -122,10 +124,10 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
               {/* Avatar */}
               <div className="relative flex-shrink-0">
                 <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50">
-                  {conv.avatarUrl ? (
+                  {meta.avatarUrl ? (
                     <Image
-                      src={conv.avatarUrl}
-                      alt={conv.name}
+                      src={meta.avatarUrl}
+                      alt={meta.name}
                       width={44}
                       height={44}
                       className="object-cover w-full h-full"
@@ -133,11 +135,11 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center font-bold text-slate-300">
-                      {conv.name.charAt(0)}
+                      {meta.name.charAt(0)}
                     </div>
                   )}
                 </div>
-                {conv.type === "group" ? (
+                {meta.isGroup ? (
                   <span className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-slate-900 rounded-full border border-slate-700">
                     <Users className="w-3 h-3 text-indigo-400" />
                   </span>
@@ -150,7 +152,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
                   <h2 className="text-sm font-medium truncate text-slate-100">
-                    {conv.name}
+                    {meta.name}
                   </h2>
                   <span className="text-[11px] text-slate-500 font-mono">
                     {conv.lastMessage
@@ -185,7 +187,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
         )}
       </div>
 
-      {/* Logged-In User Profile & Sign Out Footer */}
+      {/* Current User Profile Footer */}
       {currentUser && (
         <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
