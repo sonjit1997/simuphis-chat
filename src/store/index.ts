@@ -1,3 +1,4 @@
+import authReducer from "./slices/authSlice";
 import conversationsReducer from "./slices/conversationsSlice";
 import draftsReducer from "./slices/draftsSlice";
 import messagesReducer from "./slices/messagesSlice";
@@ -6,6 +7,7 @@ import { configureStore } from "@reduxjs/toolkit";
 
 export const store = configureStore({
   reducer: {
+    auth: authReducer,
     conversations: conversationsReducer,
     messages: messagesReducer,
     drafts: draftsReducer,

@@ -1,8 +1,7 @@
 "use client";
 
-import { CURRENT_USER } from "@/mock/initialData";
 import { socketService } from "@/services/socketService";
-import { useAppDispatch } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { updateLastMessage } from "@/store/slices/conversationsSlice";
 import {
   addOptimisticMessage,
@@ -24,16 +23,16 @@ interface ChatContainerProps {
 
 export function ChatContainer({ conversationId }: ChatContainerProps) {
   const dispatch = useAppDispatch();
+  const currentUser = useAppSelector((state) => state.auth.currentUser);
+
   const [replyingTo, setReplyingTo] = useState<GroupedMessage | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // AbortController ref for in-flight media upload cancellation (Evaluation requirement)
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
 
-  // Clean up any pending upload on component unmount
   useEffect(() => {
     return () => {
       if (uploadAbortControllerRef.current) {
@@ -58,7 +57,6 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
       setUploadProgress(10);
       setUploadError(null);
 
-      // Create new AbortController instance
       uploadAbortControllerRef.current = new AbortController();
 
       try {
@@ -112,7 +110,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         uploadAbortControllerRef.current = null;
       }
     },
-    [conversationId]
+    [conversationId, currentUser]
   );
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -150,6 +148,8 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     replyToMessage?: GroupedMessage | null,
     mediaData?: { mediaUrl: string; fileName: string; type: MessageType; fileSize: number }
   ) => {
+    if (!currentUser) return;
+
     const tempId = "client-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
     const messageType: MessageType = mediaData ? mediaData.type : "text";
 
@@ -157,9 +157,9 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
       id: tempId,
       clientTempId: tempId,
       conversationId,
-      senderId: CURRENT_USER.id,
-      senderName: CURRENT_USER.name,
-      senderAvatar: CURRENT_USER.avatarUrl,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatarUrl,
       type: messageType,
       content,
       mediaUrl: mediaData?.mediaUrl,
@@ -186,7 +186,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
           id: tempId,
           content: messageType === "text" ? content : `Shared ${messageType}`,
           type: messageType,
-          senderName: CURRENT_USER.name,
+          senderName: currentUser.name,
           createdAt: optimisticMsg.createdAt,
         },
       })
@@ -195,8 +195,8 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     const ack = await socketService.sendMessage({
       clientTempId: tempId,
       conversationId,
-      senderId: CURRENT_USER.id,
-      senderName: CURRENT_USER.name,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
       type: messageType,
       content,
       mediaUrl: mediaData?.mediaUrl,
@@ -222,13 +222,14 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     targetConversationId: string,
     originalMessageId: string
   ) => {
+    if (!currentUser) return;
     const tempId = "fwd-" + Date.now();
     await socketService.forwardMessage({
       clientTempId: tempId,
       targetConversationId,
       originalMessageId,
-      senderId: CURRENT_USER.id,
-      senderName: CURRENT_USER.name,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
     });
   };
 
@@ -243,7 +244,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
       <MediaUploadOverlay isDraggingOver={isDraggingOver} />
       <ChatHeader />
       <MessageList
-        currentUserId={CURRENT_USER.id}
+        currentUserId={currentUser?.id || ""}
         onReply={(msg) => setReplyingTo(msg)}
         onForward={(msg) => dispatch(setForwardModalMessageId(msg.id))}
       />

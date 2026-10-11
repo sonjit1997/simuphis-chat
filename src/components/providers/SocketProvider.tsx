@@ -1,6 +1,5 @@
 "use client";
 
-import { CURRENT_USER } from "@/mock/initialData";
 import { socketService } from "@/services/socketService";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -24,11 +23,11 @@ export function useSocket() {
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
+  const currentUser = useAppSelector((state) => state.auth.currentUser);
   const activeConvId = useAppSelector(selectActiveConversationId);
   const activeMessages = useAppSelector(selectMessagesByActiveConversation);
   const lastSyncTimestampRef = useRef<string | null>(null);
 
-  // Keep track of newest message timestamp for reconnect gap recovery
   useEffect(() => {
     if (activeMessages.length > 0) {
       const latest = activeMessages[activeMessages.length - 1];
@@ -37,15 +36,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, [activeMessages]);
 
   useEffect(() => {
-    // Connect socket on mount
-    const socket = socketService.connect(CURRENT_USER.id);
+    if (!currentUser) return;
 
-    // Connection lifecycle events
+    // Connect socket on mount with current user identity
+    const socket = socketService.connect(currentUser.id);
+
     socket.on("connect", () => {
-      console.log("[Socket Connected]");
+      console.log(`[Socket Connected] User: ${currentUser.name}`);
       dispatch(setConnectionStatus("connected"));
 
-      // Reconnect gap recovery: retrieve any missed messages while disconnected
       if (activeConvId) {
         socketService
           .syncMessages({
@@ -54,7 +53,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           })
           .then((response) => {
             if (response.messages && response.messages.length > 0) {
-              console.log(`[Recovery] Merged ${response.messages.length} messages`);
               dispatch(setMessages(response.messages));
             }
           });
@@ -70,7 +68,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       dispatch(setConnectionStatus("connecting"));
     });
 
-    // Real-Time Incoming Message Listener
     socket.on("message:new", (message) => {
       dispatch(setMessages([message]));
       dispatch(
@@ -88,12 +85,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
-    // Real-Time Typing Listener
     socket.on("typing:update", ({ conversationId, typingUsers }) => {
       dispatch(
         setTypingUsers({
           conversationId,
-          typingUsers: typingUsers.filter((u) => u.userId !== CURRENT_USER.id),
+          typingUsers: typingUsers.filter((u) => u.userId !== currentUser.id),
         })
       );
     });
@@ -101,7 +97,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       socketService.disconnect();
     };
-  }, [dispatch, activeConvId]);
+  }, [dispatch, currentUser, activeConvId]);
 
   return (
     <SocketContext.Provider value={socketService}>

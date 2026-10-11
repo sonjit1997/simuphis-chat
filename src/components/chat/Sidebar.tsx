@@ -1,15 +1,18 @@
 "use client";
 
+import { signOutFromFirebase } from "@/lib/firebase";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   selectAllConversations,
   selectActiveConversationId,
 } from "@/store/selectors/chatSelectors";
+import { logout } from "@/store/slices/authSlice";
 import { setActiveConversationId } from "@/store/slices/conversationsSlice";
 import { formatConversationTime } from "@/utils/dateFormatters";
-import { MessageSquare, Search, ShieldCheck, Users } from "lucide-react";
+import { LogOut, MessageSquare, Search, ShieldCheck, Users } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 
 interface SidebarProps {
@@ -18,8 +21,11 @@ interface SidebarProps {
 
 export function Sidebar({ onForwardDrop }: SidebarProps) {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const conversations = useAppSelector(selectAllConversations);
   const activeId = useAppSelector(selectActiveConversationId);
+  const currentUser = useAppSelector((state) => state.auth.currentUser);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -46,6 +52,12 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
     }
   };
 
+  const handleLogout = async () => {
+    await signOutFromFirebase();
+    dispatch(logout());
+    router.push("/login");
+  };
+
   return (
     <aside className="w-80 md:w-96 h-screen flex flex-col bg-[#0b1120] border-r border-slate-800/80 select-none">
       {/* Top Header */}
@@ -58,7 +70,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
             <h1 className="font-semibold text-sm tracking-tight text-slate-100 flex items-center gap-1.5">
               SimuPhish
               <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                PROD
+                LIVE
               </span>
             </h1>
             <p className="text-[11px] text-slate-400">Real-Time Messaging</p>
@@ -74,16 +86,17 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations..."
+            placeholder="Search contacts & chats..."
+            aria-label="Search conversations"
             className="w-full pl-9 pr-3 py-2 bg-slate-900/90 text-sm text-slate-200 placeholder-slate-500 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500/50 transition-colors"
           />
         </div>
       </div>
 
-      {/* Conversation List */}
+      {/* Person-to-Person Conversation List */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1">
         <div className="px-2 py-1 text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-          Conversations ({filteredConversations.length})
+          Direct Messages & Teams ({filteredConversations.length})
         </div>
 
         {filteredConversations.map((conv) => {
@@ -114,6 +127,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
                       width={44}
                       height={44}
                       className="object-cover w-full h-full"
+                      unoptimized
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center font-bold text-slate-300">
@@ -169,14 +183,50 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
         )}
       </div>
 
-      {/* Drag & Forward Hint Footer */}
-      <div className="p-3 bg-slate-900/60 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          WebSockets Ready
-        </span>
-        <span className="text-[10px] text-slate-500">Drag to forward</span>
-      </div>
+      {/* Logged-In User Profile & Sign Out Footer */}
+      {currentUser && (
+        <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="relative flex-shrink-0">
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-slate-800 border border-slate-700">
+                {currentUser.avatarUrl ? (
+                  <Image
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    width={36}
+                    height={36}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center font-bold text-slate-300">
+                    {currentUser.name.charAt(0)}
+                  </div>
+                )}
+              </div>
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-900" />
+            </div>
+
+            <div className="min-w-0">
+              <h3 className="text-xs font-semibold text-slate-100 truncate">
+                {currentUser.name}
+              </h3>
+              <p className="text-[10px] text-slate-400 truncate">
+                {currentUser.email || "Active User"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            title="Sign out / Switch user"
+            aria-label="Sign out"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
