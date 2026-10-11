@@ -315,6 +315,14 @@ io.on("connection", (socket) => {
   });
 });
 
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.log(`[Notice] Port ${PORT} is already in use by another running instance. Continuing with active server.`);
+  } else {
+    console.error("[Server Error]:", err);
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`======================================================`);
   console.log(`  SimuPhish Real-Time WebSocket Server Running on :${PORT}`);
