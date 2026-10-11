@@ -1,6 +1,7 @@
 "use client";
 
 import { store } from "@/store";
+import { setCurrentUser } from "@/store/slices/authSlice";
 import { setConversations } from "@/store/slices/conversationsSlice";
 import { setMessages } from "@/store/slices/messagesSlice";
 import { Conversation, Message } from "@/types/chat";
@@ -19,6 +20,15 @@ export function StoreProvider({
   initialMessages,
 }: StoreProviderProps) {
   useEffect(() => {
+    // Rehydrate session safely on client mount after hydration
+    try {
+      const hasSessionCookie = document.cookie.includes("simuphish_session=");
+      const saved = localStorage.getItem("simuphish_user_session");
+      if (hasSessionCookie && saved) {
+        store.dispatch(setCurrentUser(JSON.parse(saved)));
+      }
+    } catch {}
+
     if (initialConversations && initialConversations.length > 0) {
       store.dispatch(setConversations(initialConversations));
     }

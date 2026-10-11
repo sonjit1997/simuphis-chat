@@ -6,23 +6,10 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
-const getInitialUser = (): User | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const hasSessionCookie = document.cookie.includes("simuphish_session=");
-    if (!hasSessionCookie) return null;
-
-    const saved = localStorage.getItem("simuphish_user_session");
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return null;
-};
-
-const initialUser = getInitialUser();
-
+// Initial state must be identical on server and client to prevent hydration mismatches
 const initialState: AuthState = {
-  currentUser: initialUser,
-  isAuthenticated: !!initialUser,
+  currentUser: null,
+  isAuthenticated: false,
 };
 
 export const authSlice = createSlice({

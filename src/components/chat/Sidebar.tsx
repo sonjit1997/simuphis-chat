@@ -16,7 +16,7 @@ import { LogOut, MessageSquare, Search, ShieldCheck, UserPlus, Users } from "luc
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 interface SidebarProps {
   onForwardDrop?: (targetConversationId: string) => void;
@@ -33,11 +33,16 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  // Show only OTHER real registered persons
-  const otherUsers = registeredUsers.filter(
-    (u) => u.id !== currentUser?.id
-  );
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Show only OTHER real registered persons after mount to match SSR HTML
+  const otherUsers = mounted && currentUser
+    ? registeredUsers.filter((u) => u.id !== currentUser.id)
+    : [];
 
   const filteredUsers = otherUsers.filter(
     (u) =>
@@ -214,7 +219,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
       </div>
 
       {/* Logged-In User Profile & Sign Out Footer */}
-      {currentUser && (
+      {mounted && currentUser && (
         <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="relative flex-shrink-0">
