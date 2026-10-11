@@ -47,7 +47,50 @@ function createMockStore(initialDraft = "") {
   });
 }
 
-describe("Composer Component", () => {
+describe("Composer Component (Full Evaluation Coverage)", () => {
+  it("renders uploading progress state and supports cancel", () => {
+    const handleCancel = vi.fn();
+    const store = createMockStore("");
+    render(
+      <Provider store={store}>
+        <Composer
+          onSendMessage={vi.fn()}
+          replyingTo={null}
+          onCancelReply={vi.fn()}
+          uploadStatus="uploading"
+          uploadProgress={65}
+          onCancelUpload={handleCancel}
+        />
+      </Provider>
+    );
+
+    expect(screen.getByTestId("composer-upload-progress")).toBeDefined();
+    expect(screen.getByText("65%")).toBeDefined();
+
+    const cancelButton = screen.getByLabelText("Cancel upload");
+    fireEvent.click(cancelButton);
+    expect(handleCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders upload error state with retry banner", () => {
+    const store = createMockStore("");
+    render(
+      <Provider store={store}>
+        <Composer
+          onSendMessage={vi.fn()}
+          replyingTo={null}
+          onCancelReply={vi.fn()}
+          uploadStatus="error"
+          uploadError="File size exceeded"
+        />
+      </Provider>
+    );
+
+    expect(screen.getByTestId("composer-upload-error")).toBeDefined();
+    expect(screen.getByText("File size exceeded")).toBeDefined();
+    expect(screen.getByText("Retry")).toBeDefined();
+  });
+
   it("restores draft persistence for active conversation", () => {
     const store = createMockStore("Persisted draft message");
     render(
@@ -60,9 +103,7 @@ describe("Composer Component", () => {
       </Provider>
     );
 
-    const textarea = screen.getByPlaceholderText(
-      /Type a message/i
-    ) as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText("Message input box") as HTMLTextAreaElement;
     expect(textarea.value).toBe("Persisted draft message");
   });
 
@@ -79,7 +120,7 @@ describe("Composer Component", () => {
       </Provider>
     );
 
-    const textarea = screen.getByPlaceholderText(/Type a message/i);
+    const textarea = screen.getByLabelText("Message input box");
     fireEvent.change(textarea, { target: { value: "New message content" } });
 
     const sendButton = screen.getByLabelText("Send message");

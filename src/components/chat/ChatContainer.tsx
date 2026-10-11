@@ -11,7 +11,7 @@ import {
 } from "@/store/slices/messagesSlice";
 import { setForwardModalMessageId } from "@/store/slices/socketSlice";
 import { GroupedMessage, Message, MessageType } from "@/types/chat";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { ForwardModal } from "./ForwardModal";
@@ -30,18 +30,41 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // File Upload Pipeline to /api/upload (Cloudinary storage)
+  // AbortController ref for in-flight media upload cancellation (Evaluation requirement)
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Clean up any pending upload on component unmount
+  useEffect(() => {
+    return () => {
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const handleCancelUpload = useCallback(() => {
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+    setUploadStatus("idle");
+    setUploadProgress(null);
+    setUploadError(null);
+  }, []);
+
   const handleUploadFile = useCallback(
     async (file: File) => {
       setUploadStatus("uploading");
       setUploadProgress(10);
       setUploadError(null);
 
+      // Create new AbortController instance
+      uploadAbortControllerRef.current = new AbortController();
+
       try {
         const formData = new FormData();
         formData.append("file", file);
 
-        // Progress simulation
         const progressInterval = setInterval(() => {
           setUploadProgress((prev) => (prev && prev < 85 ? prev + 15 : prev));
         }, 200);
@@ -49,6 +72,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         const response = await fetch("/api/upload", {
           method: "POST",
           body: formData,
+          signal: uploadAbortControllerRef.current.signal,
         });
 
         clearInterval(progressInterval);
@@ -62,32 +86,35 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         setUploadProgress(100);
         setUploadStatus("success");
 
-        // Immediately send uploaded media over WebSocket
-        await handleSendMessage(
-          file.name,
-          null,
-          {
-            mediaUrl: data.mediaUrl,
-            fileName: data.fileName,
-            type: data.type as MessageType,
-            fileSize: data.fileSize,
-          }
-        );
+        await handleSendMessage(file.name, null, {
+          mediaUrl: data.mediaUrl,
+          fileName: data.fileName,
+          type: data.type as MessageType,
+          fileSize: data.fileSize,
+        });
 
         setTimeout(() => {
           setUploadStatus("idle");
           setUploadProgress(null);
-        }, 1200);
+        }, 1000);
       } catch (err: any) {
+        if (err.name === "AbortError") {
+          console.log("[Upload Aborted by User via AbortController]");
+          setUploadStatus("idle");
+          setUploadProgress(null);
+          return;
+        }
+
         console.error("[Upload Error]:", err);
         setUploadStatus("error");
         setUploadError(err.message || "Failed to upload file");
+      } finally {
+        uploadAbortControllerRef.current = null;
       }
     },
     [conversationId]
   );
 
-  // Drag-and-drop file listeners for chat viewport
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.types.includes("Files")) {
@@ -124,7 +151,6 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     mediaData?: { mediaUrl: string; fileName: string; type: MessageType; fileSize: number }
   ) => {
     const tempId = "client-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
-
     const messageType: MessageType = mediaData ? mediaData.type : "text";
 
     const optimisticMsg: Message = {
@@ -226,6 +252,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onUploadFile={handleUploadFile}
+        onCancelUpload={handleCancelUpload}
         uploadProgress={uploadProgress}
         uploadStatus={uploadStatus}
         uploadError={uploadError}

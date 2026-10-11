@@ -12,12 +12,12 @@ import { GroupedMessage } from "@/types/chat";
 import { CURRENT_USER } from "@/mock/initialData";
 import {
   AlertCircle,
-  CheckCircle2,
   Paperclip,
   Send,
   Smile,
   Upload,
   X,
+  XCircle,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 
@@ -30,6 +30,7 @@ interface ComposerProps {
   replyingTo: GroupedMessage | null;
   onCancelReply: () => void;
   onUploadFile?: (file: File) => Promise<void>;
+  onCancelUpload?: () => void;
   uploadProgress?: number | null;
   uploadStatus?: "idle" | "uploading" | "success" | "error";
   uploadError?: string | null;
@@ -40,6 +41,7 @@ export function Composer({
   replyingTo,
   onCancelReply,
   onUploadFile,
+  onCancelUpload,
   uploadProgress,
   uploadStatus,
   uploadError,
@@ -52,7 +54,6 @@ export function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync draft from Redux / LocalStorage when active conversation changes
   useEffect(() => {
     setText(activeDraft);
     if (inputRef.current) {
@@ -117,17 +118,33 @@ export function Composer({
 
   return (
     <footer className="p-4 bg-[#0f172a]/90 backdrop-blur-md border-t border-slate-800">
-      {/* Upload Progress Bar (Cloudinary Status Feedback) */}
+      {/* Upload Progress Bar with AbortController Cancel Support */}
       {uploadStatus === "uploading" && (
-        <div className="mb-2.5 p-3 rounded-xl bg-slate-800/90 border border-indigo-500/30 text-xs">
+        <div
+          data-testid="composer-upload-progress"
+          className="mb-2.5 p-3 rounded-xl bg-slate-800/90 border border-indigo-500/30 text-xs"
+        >
           <div className="flex items-center justify-between text-slate-300 mb-1.5 font-medium">
             <span className="flex items-center gap-1.5">
               <Upload className="w-3.5 h-3.5 text-indigo-400 animate-bounce" />
               Uploading to Cloudinary...
             </span>
-            <span className="font-mono text-indigo-400 font-bold">
-              {uploadProgress ?? 0}%
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-indigo-400 font-bold">
+                {uploadProgress ?? 0}%
+              </span>
+              {onCancelUpload && (
+                <button
+                  type="button"
+                  onClick={onCancelUpload}
+                  title="Cancel Upload (AbortController)"
+                  aria-label="Cancel upload"
+                  className="text-slate-400 hover:text-rose-400 transition-colors"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="w-full h-1.5 bg-slate-700/80 rounded-full overflow-hidden">
             <div
@@ -140,14 +157,17 @@ export function Composer({
 
       {/* Upload Error Banner with Retry */}
       {uploadStatus === "error" && uploadError && (
-        <div className="mb-2.5 p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-center justify-between">
+        <div
+          data-testid="composer-upload-error"
+          className="mb-2.5 p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-center justify-between"
+        >
           <span className="flex items-center gap-1.5">
             <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             {uploadError}
           </span>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="px-2 py-0.5 rounded bg-rose-600/40 text-white font-medium hover:bg-rose-600/60"
+            className="px-2 py-0.5 rounded bg-rose-600/40 text-white font-medium hover:bg-rose-600/60 transition-colors"
           >
             Retry
           </button>
@@ -202,12 +222,14 @@ export function Composer({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+            aria-label="Message input box"
             className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 px-3 py-1 resize-none focus:outline-none max-h-32"
           />
 
           <button
             type="button"
             title="Emoji picker"
+            aria-label="Emoji picker"
             className="p-1.5 text-slate-400 hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-800"
           >
             <Smile className="w-4 h-4" />
