@@ -176,7 +176,7 @@ io.on("connection", (socket) => {
       processedTempIds.set(clientTempId, serverMessage);
 
       // Emit to all users in this conversation
-      io.to(conversationId).emit("message:new", serverMessage);
+      socket.to(conversationId).emit("message:new", serverMessage);
 
       if (typingMap.has(conversationId)) {
         typingMap.get(conversationId).delete(user.id);
@@ -242,7 +242,7 @@ io.on("connection", (socket) => {
       messages.get(targetConversationId).push(forwardedMsg);
       processedTempIds.set(clientTempId, forwardedMsg);
 
-      io.to(targetConversationId).emit("message:new", forwardedMsg);
+      socket.to(targetConversationId).emit("message:new", forwardedMsg);
 
       if (typeof ack === "function") {
         ack({ success: true, clientTempId, serverMessageId: forwardedMsg.id, message: forwardedMsg });

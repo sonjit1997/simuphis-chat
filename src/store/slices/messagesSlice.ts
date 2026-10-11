@@ -25,6 +25,11 @@ export const messagesSlice = createSlice({
   initialState,
   reducers: {
     setMessages: (state, action: PayloadAction<Message[]>) => {
+      for (const msg of action.payload) {
+        if (msg.clientTempId && state.entities[msg.clientTempId]) {
+          messagesAdapter.removeOne(state, msg.clientTempId);
+        }
+      }
       messagesAdapter.upsertMany(state, action.payload);
       state.status = "succeeded";
     },
@@ -39,7 +44,7 @@ export const messagesSlice = createSlice({
       }>
     ) => {
       const { clientTempId, serverMessage } = action.payload;
-      if (clientTempId !== serverMessage.id && state.entities[clientTempId]) {
+      if (clientTempId && state.entities[clientTempId]) {
         messagesAdapter.removeOne(state, clientTempId);
       }
       messagesAdapter.upsertOne(state, {

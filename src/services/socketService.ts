@@ -71,35 +71,36 @@ class SocketService {
 
   public sendMessage(payload: SendMessagePayload): Promise<MessageAck> {
     return new Promise((resolve) => {
-      const serverMessage = {
-        id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
-        clientTempId: payload.clientTempId,
-        conversationId: payload.conversationId,
-        senderId: payload.senderId,
-        senderName: payload.senderName,
-        type: payload.type || "text",
-        content: payload.content,
-        mediaUrl: payload.mediaUrl,
-        fileName: payload.fileName,
-        fileSize: payload.fileSize,
-        createdAt: new Date().toISOString(),
-        status: "delivered" as const,
-        replyToId: payload.replyToId || null,
-      };
-
-      if (this.broadcastChannel) {
-        this.broadcastChannel.postMessage({
-          type: "message:new",
-          data: serverMessage,
-        });
-      }
-
+      // If socket is disconnected, use BroadcastChannel as local fallback
       if (!this.socket || !this.socket.connected) {
+        const localMessage = {
+          id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          clientTempId: payload.clientTempId,
+          conversationId: payload.conversationId,
+          senderId: payload.senderId,
+          senderName: payload.senderName,
+          type: payload.type || "text",
+          content: payload.content,
+          mediaUrl: payload.mediaUrl,
+          fileName: payload.fileName,
+          fileSize: payload.fileSize,
+          createdAt: new Date().toISOString(),
+          status: "delivered" as const,
+          replyToId: payload.replyToId || null,
+        };
+
+        if (this.broadcastChannel) {
+          this.broadcastChannel.postMessage({
+            type: "message:new",
+            data: localMessage,
+          });
+        }
+
         resolve({
           success: true,
           clientTempId: payload.clientTempId,
-          serverMessageId: serverMessage.id,
-          message: serverMessage,
+          serverMessageId: localMessage.id,
+          message: localMessage,
         });
         return;
       }
