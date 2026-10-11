@@ -7,7 +7,7 @@ const socketServer = spawn("node", ["server/index.mjs"], {
   shell: true,
 });
 
-const nextApp = spawn("next", ["dev"], {
+const nextApp = spawn("next", ["dev", "--webpack"], {
   stdio: "inherit",
   shell: true,
 });
