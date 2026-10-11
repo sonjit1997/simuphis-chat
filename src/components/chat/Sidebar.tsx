@@ -53,6 +53,8 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
   };
 
   const handleLogout = async () => {
+    // Clear session cookie and storage
+    document.cookie = "simuphish_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     await signOutFromFirebase();
     dispatch(logout());
     router.push("/login");

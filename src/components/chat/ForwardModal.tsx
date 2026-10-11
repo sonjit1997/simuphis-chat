@@ -87,6 +87,7 @@ export function ForwardModal({ onForwardConfirm }: ForwardModalProps) {
                         width={32}
                         height={32}
                         className="object-cover w-full h-full"
+                        unoptimized
                       />
                     )}
                   </div>

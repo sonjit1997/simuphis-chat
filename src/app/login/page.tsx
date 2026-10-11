@@ -16,24 +16,29 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const saveUserSession = (user: User) => {
+    // Set 7-day session cookie for Next.js middleware protection
+    document.cookie = `simuphish_session=${user.id}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+    dispatch(setCurrentUser(user));
+    router.push("/conv-1");
+  };
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
     try {
       const user = await signInWithGoogle();
-      dispatch(setCurrentUser(user));
-      router.push("/conv-1");
+      saveUserSession(user);
     } catch (err: any) {
       console.error(err);
-      setError("Google Sign-In was cancelled or failed. You can also select a test profile below.");
+      setError("Google Sign-In was cancelled or failed. You can also select a test persona below.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSelectPersona = (user: User) => {
-    dispatch(setCurrentUser(user));
-    router.push("/conv-1");
+    saveUserSession(user);
   };
 
   const availablePersonas = [CURRENT_USER, ...CONTACT_USERS.slice(0, 2)];
@@ -93,7 +98,7 @@ export default function LoginPage() {
         <div className="flex items-center my-6">
           <div className="flex-1 border-t border-slate-800" />
           <span className="px-3 text-[11px] font-mono text-slate-500 uppercase tracking-wider">
-            Or select test profile
+            Or select test persona
           </span>
           <div className="flex-1 border-t border-slate-800" />
         </div>

@@ -7,14 +7,16 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
-// Check localStorage in browser for persisted session
 const getInitialUser = (): User | null => {
   if (typeof window === "undefined") return CURRENT_USER;
   try {
+    const hasSessionCookie = document.cookie.includes("simuphish_session=");
+    if (!hasSessionCookie) return null;
+
     const saved = localStorage.getItem("simuphish_user_session");
     if (saved) return JSON.parse(saved);
   } catch {}
-  return CURRENT_USER;
+  return null;
 };
 
 const initialUser = getInitialUser();

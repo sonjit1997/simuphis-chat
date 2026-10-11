@@ -29,6 +29,7 @@ export function ChatHeader() {
                 width={40}
                 height={40}
                 className="object-cover w-full h-full"
+                unoptimized
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center font-bold text-slate-300">
