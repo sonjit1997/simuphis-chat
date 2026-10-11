@@ -1,12 +1,14 @@
 "use client";
 
 import { CURRENT_USER } from "@/mock/initialData";
+import { socketService } from "@/services/socketService";
 import { useAppDispatch } from "@/store/hooks";
+import { updateLastMessage } from "@/store/slices/conversationsSlice";
 import {
   addOptimisticMessage,
   confirmMessageSent,
+  markMessageFailed,
 } from "@/store/slices/messagesSlice";
-import { updateLastMessage } from "@/store/slices/conversationsSlice";
 import { setForwardModalMessageId } from "@/store/slices/socketSlice";
 import { GroupedMessage, Message } from "@/types/chat";
 import React, { useState } from "react";
@@ -23,12 +25,13 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
   const dispatch = useAppDispatch();
   const [replyingTo, setReplyingTo] = useState<GroupedMessage | null>(null);
 
-  const handleSendMessage = (
+  const handleSendMessage = async (
     content: string,
     replyToMessage?: GroupedMessage | null
   ) => {
-    const tempId = "temp-" + Date.now();
-    const newMsg: Message = {
+    const tempId = "client-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
+
+    const optimisticMsg: Message = {
       id: tempId,
       clientTempId: tempId,
       conversationId,
@@ -50,8 +53,8 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         : null,
     };
 
-    // 1. Optimistic Update to Redux
-    dispatch(addOptimisticMessage(newMsg));
+    // 1. Optimistic Update to Redux Store immediately
+    dispatch(addOptimisticMessage(optimisticMsg));
     dispatch(
       updateLastMessage({
         conversationId,
@@ -60,24 +63,47 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
           content,
           type: "text",
           senderName: CURRENT_USER.name,
-          createdAt: newMsg.createdAt,
+          createdAt: optimisticMsg.createdAt,
         },
       })
     );
 
-    // 2. Simulated Ack for Phase 2 UI test (Will wire socket in Phase 3)
-    setTimeout(() => {
+    // 2. Dispatch via WebSocket Transport with Acknowledgment
+    const ack = await socketService.sendMessage({
+      clientTempId: tempId,
+      conversationId,
+      senderId: CURRENT_USER.id,
+      senderName: CURRENT_USER.name,
+      type: "text",
+      content,
+      replyToId: replyToMessage?.id || null,
+    });
+
+    if (ack.success && ack.message) {
       dispatch(
         confirmMessageSent({
           clientTempId: tempId,
-          serverMessage: { ...newMsg, id: "msg-" + Date.now(), status: "delivered" },
+          serverMessage: ack.message,
         })
       );
-    }, 600);
+    } else {
+      console.error("[Send Message Failed]:", ack.error);
+      dispatch(markMessageFailed(tempId));
+    }
   };
 
-  const handleForwardDrop = (targetConversationId: string, messageId: string) => {
-    console.log(`Forwarding message ${messageId} to conversation ${targetConversationId}`);
+  const handleForwardConfirm = async (
+    targetConversationId: string,
+    originalMessageId: string
+  ) => {
+    const tempId = "fwd-" + Date.now();
+    await socketService.forwardMessage({
+      clientTempId: tempId,
+      targetConversationId,
+      originalMessageId,
+      senderId: CURRENT_USER.id,
+      senderName: CURRENT_USER.name,
+    });
   };
 
   return (
@@ -93,7 +119,7 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
       />
-      <ForwardModal onForwardConfirm={handleForwardDrop} />
+      <ForwardModal onForwardConfirm={handleForwardConfirm} />
     </div>
   );
 }
