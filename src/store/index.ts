@@ -3,6 +3,7 @@ import conversationsReducer from "./slices/conversationsSlice";
 import draftsReducer from "./slices/draftsSlice";
 import messagesReducer from "./slices/messagesSlice";
 import socketReducer from "./slices/socketSlice";
+import usersReducer from "./slices/usersSlice";
 import { configureStore } from "@reduxjs/toolkit";
 
 export const store = configureStore({
@@ -12,6 +13,7 @@ export const store = configureStore({
     messages: messagesReducer,
     drafts: draftsReducer,
     socket: socketReducer,
+    users: usersReducer,
   },
   devTools: process.env.NODE_ENV !== "production",
 });

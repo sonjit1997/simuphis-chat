@@ -2,6 +2,12 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -19,83 +25,72 @@ const io = new Server(server, {
   pingInterval: 10000,
 });
 
-// In-memory persistent state (simulating database for assessment)
-const conversations = new Map();
+// Real state
+const usersFile = path.resolve(__dirname, "../src/data/users.json");
+function loadPersistedUsers() {
+  try {
+    if (fs.existsSync(usersFile)) {
+      return new Map(JSON.parse(fs.readFileSync(usersFile, "utf8")).map((u) => [u.id, u]));
+    }
+  } catch {}
+  return new Map();
+}
+
+function persistUsers(usersMap) {
+  try {
+    const list = Array.from(usersMap.values());
+    const dir = path.dirname(usersFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(usersFile, JSON.stringify(list, null, 2), "utf8");
+  } catch {}
+}
+
+const registeredUsers = loadPersistedUsers();
 const messages = new Map(); // conversationId -> Message[]
-const processedTempIds = new Map(); // clientTempId -> Message (Idempotency cache)
+const processedTempIds = new Map(); // clientTempId -> Message
 const userSockets = new Map(); // userId -> Set<socketId>
 const typingMap = new Map(); // conversationId -> Map<userId, userName>
 
-// Initialize mock data in server
-messages.set("conv-1", [
-  {
-    id: "msg-1",
-    conversationId: "conv-1",
-    senderId: "user-2",
-    senderName: "Sarah Jenkins",
-    senderAvatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces",
-    type: "text",
-    content: "Hey Sonjit! Did you check the requirements for the real-time chat assessment?",
-    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    status: "delivered",
-  },
-  {
-    id: "msg-2",
-    conversationId: "conv-1",
-    senderId: "user-1",
-    senderName: "Sonjit Saha",
-    senderAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces",
-    type: "text",
-    content: "Yes! Designing it with Next.js App Router, Redux Toolkit, and Socket.io with strict resilience.",
-    createdAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
-    status: "delivered",
-    replyToId: "msg-1",
-    repliedToMessage: {
-      id: "msg-1",
-      senderName: "Sarah Jenkins",
-      content: "Hey Sonjit! Did you check the requirements for the real-time chat assessment?",
-      type: "text",
-    },
-  },
-  {
-    id: "msg-3",
-    conversationId: "conv-1",
-    senderId: "user-2",
-    senderName: "Sarah Jenkins",
-    senderAvatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces",
-    type: "text",
-    content: "Let's review the SimuPhish dashboard preview tomorrow morning!",
-    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-    status: "delivered",
-  },
-]);
+// Express REST Endpoints
+app.get("/api/users", (req, res) => {
+  res.json(Array.from(registeredUsers.values()));
+});
 
-// 1. Handshake Authentication Middleware
-// Evaluated requirement: backend must not blindly trust client identity
+app.post("/api/users", (req, res) => {
+  const user = req.body;
+  if (user && user.id) {
+    registeredUsers.set(user.id, user);
+    persistUsers(registeredUsers);
+    io.emit("users:update", Array.from(registeredUsers.values()));
+    return res.json({ success: true, user, users: Array.from(registeredUsers.values()) });
+  }
+  res.status(400).json({ error: "Invalid user data" });
+});
+
+// Handshake Authentication
 io.use((socket, next) => {
-  const { userId, token } = socket.handshake.auth;
+  const { userId, user } = socket.handshake.auth;
 
   if (!userId) {
     return next(new Error("Authentication failed: Missing userId in handshake"));
   }
 
-  // Session verification simulation (validate token format / expiry)
-  if (!token || !token.startsWith("simuphish-session-")) {
-    console.warn(`[Auth Rejected] Invalid session token for user: ${userId}`);
-    return next(new Error("Authentication failed: Invalid or expired session token"));
-  }
-
-  // Attach verified user identity to socket context
-  socket.data.user = {
+  const validUser = user || {
     id: userId,
-    name: userId === "user-1" ? "Sonjit Saha" : `User ${userId}`,
+    name: "User " + userId.slice(0, 6),
+    email: "",
+    avatarUrl: "",
+    status: "online",
   };
 
-  console.log(`[Auth Verified] User connected: ${socket.data.user.name} (${userId}) [Socket: ${socket.id}]`);
+  socket.data.user = validUser;
+  registeredUsers.set(userId, { ...validUser, status: "online" });
+  persistUsers(registeredUsers);
+
+  console.log(`[Auth Verified] ${validUser.name} (${userId}) connected`);
   next();
 });
 
-// Helper for broadcasting typing updates
 function broadcastTypingUpdate(conversationId) {
   const map = typingMap.get(conversationId);
   const typingUsers = map
@@ -108,34 +103,46 @@ function broadcastTypingUpdate(conversationId) {
   });
 }
 
-// 2. Connection Lifecycle
 io.on("connection", (socket) => {
   const user = socket.data.user;
 
-  // Track socket per user
   if (!userSockets.has(user.id)) {
     userSockets.set(user.id, new Set());
   }
   userSockets.get(user.id).add(socket.id);
 
-  // Auto-join conversation rooms
-  socket.join("conv-1");
-  socket.join("conv-2");
-  socket.join("conv-3");
+  // Broadcast user directory update
+  io.emit("users:update", Array.from(registeredUsers.values()));
 
-  // Broadcast user online status
-  io.emit("user:status", { userId: user.id, status: "online" });
+  socket.on("users:get", (ack) => {
+    if (typeof ack === "function") {
+      ack(Array.from(registeredUsers.values()));
+    }
+  });
 
-  // ------------------------------------------------
-  // Event: message:send (with validation, deduplication, ack)
-  // ------------------------------------------------
+  socket.on("room:join", ({ conversationId }) => {
+    if (conversationId) {
+      socket.join(conversationId);
+      console.log(`[Room Joined] User ${user.name} joined ${conversationId}`);
+    }
+  });
+
   socket.on("message:send", (payload, ack) => {
     try {
-      const { clientTempId, conversationId, content, type, replyToId, mediaUrl, fileName } = payload;
+      const {
+        clientTempId,
+        conversationId,
+        type,
+        content,
+        mediaUrl,
+        fileName,
+        fileSize,
+        replyToId,
+      } = payload;
 
-      // 1. Idempotency Check (Duplicate prevention)
+      socket.join(conversationId);
+
       if (processedTempIds.has(clientTempId)) {
-        console.log(`[Duplicate Prevented] Message tempId already processed: ${clientTempId}`);
         const existing = processedTempIds.get(clientTempId);
         if (typeof ack === "function") {
           return ack({ success: true, clientTempId, serverMessageId: existing.id, message: existing });
@@ -143,76 +150,41 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // 2. Server-side validation
-      if (!conversationId) {
-        if (typeof ack === "function") return ack({ success: false, clientTempId, error: "Missing conversationId" });
-        return;
-      }
-
-      if (type === "text" && (!content || content.trim().length === 0)) {
-        if (typeof ack === "function") return ack({ success: false, clientTempId, error: "Message content cannot be empty" });
-        return;
-      }
-
-      // Payload length cap (assessment security requirement)
-      if (content && content.length > 5000) {
-        if (typeof ack === "function") return ack({ success: false, clientTempId, error: "Message exceeds maximum allowed length (5000 characters)" });
-        return;
-      }
-
-      // Sanitize content (strip harmful scripts)
       const sanitizedContent = content ? content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "") : "";
 
-      // 3. Resolve reply context if applicable
-      let repliedToMessage = null;
-      if (replyToId && messages.has(conversationId)) {
-        const found = messages.get(conversationId).find((m) => m.id === replyToId);
-        if (found) {
-          repliedToMessage = {
-            id: found.id,
-            senderName: found.senderName,
-            content: found.content,
-            type: found.type,
-          };
-        }
-      }
-
-      // 4. Construct server confirmed message
       const serverMessage = {
         id: "msg-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         clientTempId,
         conversationId,
         senderId: user.id,
         senderName: user.name,
+        senderAvatar: user.avatarUrl,
         type: type || "text",
         content: sanitizedContent,
         mediaUrl: mediaUrl || undefined,
         fileName: fileName || undefined,
+        fileSize: fileSize || undefined,
         createdAt: new Date().toISOString(),
         status: "delivered",
         replyToId: replyToId || null,
-        repliedToMessage,
       };
 
-      // Store in memory
       if (!messages.has(conversationId)) {
         messages.set(conversationId, []);
       }
       messages.get(conversationId).push(serverMessage);
       processedTempIds.set(clientTempId, serverMessage);
 
-      // 5. Broadcast to all participants in conversation room
+      // Emit to all users in this conversation
       io.to(conversationId).emit("message:new", serverMessage);
 
-      // Clear typing indicator for sender
       if (typingMap.has(conversationId)) {
         typingMap.get(conversationId).delete(user.id);
         broadcastTypingUpdate(conversationId);
       }
 
-      console.log(`[Message Dispatched] ${user.name} -> ${conversationId}: "${sanitizedContent.slice(0, 30)}..."`);
+      console.log(`[Message Dispatched] ${user.name} -> ${conversationId}: "${sanitizedContent.slice(0, 30)}"`);
 
-      // 6. Return Ack callback to client
       if (typeof ack === "function") {
         ack({
           success: true,
@@ -224,19 +196,16 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("[Message Send Error]:", err);
       if (typeof ack === "function") {
-        ack({ success: false, clientTempId: payload?.clientTempId, error: "Internal server error processing message" });
+        ack({ success: false, clientTempId: payload?.clientTempId, error: "Internal server error" });
       }
     }
   });
 
-  // ------------------------------------------------
-  // Event: message:forward (Drag-and-Forward real-time transport)
-  // ------------------------------------------------
   socket.on("message:forward", (payload, ack) => {
     try {
       const { clientTempId, targetConversationId, originalMessageId } = payload;
+      socket.join(targetConversationId);
 
-      // Find original message across conversations
       let originalMsg = null;
       for (const convMsgs of messages.values()) {
         const found = convMsgs.find((m) => m.id === originalMessageId);
@@ -276,28 +245,19 @@ io.on("connection", (socket) => {
       io.to(targetConversationId).emit("message:new", forwardedMsg);
 
       if (typeof ack === "function") {
-        ack({
-          success: true,
-          clientTempId,
-          serverMessageId: forwardedMsg.id,
-          message: forwardedMsg,
-        });
+        ack({ success: true, clientTempId, serverMessageId: forwardedMsg.id, message: forwardedMsg });
       }
     } catch (err) {
-      console.error("[Forward Error]:", err);
       if (typeof ack === "function") {
         ack({ success: false, clientTempId: payload?.clientTempId, error: "Forward failed" });
       }
     }
   });
 
-  // ------------------------------------------------
-  // Event: message:sync (Reconnect Gap Recovery)
-  // Evaluated requirement: no lost messages on reconnect
-  // ------------------------------------------------
   socket.on("message:sync", (payload, ack) => {
     try {
       const { conversationId, lastSyncedAt } = payload;
+      socket.join(conversationId);
       const convMsgs = messages.get(conversationId) || [];
 
       let missedMessages = convMsgs;
@@ -308,8 +268,6 @@ io.on("connection", (socket) => {
         );
       }
 
-      console.log(`[Sync Recovery] User ${user.name} synced ${conversationId}: ${missedMessages.length} missed messages recovered`);
-
       if (typeof ack === "function") {
         ack({
           conversationId,
@@ -318,16 +276,12 @@ io.on("connection", (socket) => {
         });
       }
     } catch (err) {
-      console.error("[Sync Error]:", err);
       if (typeof ack === "function") {
         ack({ conversationId: payload?.conversationId, messages: [], syncedAt: new Date().toISOString() });
       }
     }
   });
 
-  // ------------------------------------------------
-  // Event: typing:start & typing:stop
-  // ------------------------------------------------
   socket.on("typing:start", ({ conversationId }) => {
     if (!typingMap.has(conversationId)) {
       typingMap.set(conversationId, new Map());
@@ -343,26 +297,19 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ------------------------------------------------
-  // Disconnect Handling
-  // ------------------------------------------------
   socket.on("disconnect", () => {
-    console.log(`[Socket Disconnected] User: ${user.name} [Socket: ${socket.id}]`);
-
-    const userSocketSet = userSockets.get(user.id);
-    if (userSocketSet) {
-      userSocketSet.delete(socket.id);
-      if (userSocketSet.size === 0) {
+    console.log(`[Socket Disconnected] ${user.name}`);
+    const set = userSockets.get(user.id);
+    if (set) {
+      set.delete(socket.id);
+      if (set.size === 0) {
         userSockets.delete(user.id);
-        io.emit("user:status", { userId: user.id, status: "offline" });
-      }
-    }
-
-    // Clean up any lingering typing indicators
-    for (const [convId, map] of typingMap.entries()) {
-      if (map.has(user.id)) {
-        map.delete(user.id);
-        broadcastTypingUpdate(convId);
+        const existing = registeredUsers.get(user.id);
+        if (existing) {
+          registeredUsers.set(user.id, { ...existing, status: "offline", lastSeen: new Date().toISOString() });
+          persistUsers(registeredUsers);
+          io.emit("users:update", Array.from(registeredUsers.values()));
+        }
       }
     }
   });

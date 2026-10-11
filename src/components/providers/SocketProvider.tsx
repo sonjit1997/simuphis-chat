@@ -9,6 +9,7 @@ import {
 import { updateLastMessage } from "@/store/slices/conversationsSlice";
 import { setMessages } from "@/store/slices/messagesSlice";
 import { setConnectionStatus, setTypingUsers } from "@/store/slices/socketSlice";
+import { setUsers, addUser } from "@/store/slices/usersSlice";
 import React, { createContext, useContext, useEffect, useRef } from "react";
 
 const SocketContext = createContext<typeof socketService | null>(null);
@@ -28,6 +29,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const activeMessages = useAppSelector(selectMessagesByActiveConversation);
   const lastSyncTimestampRef = useRef<string | null>(null);
 
+  // Fetch initial users from API
+  useEffect(() => {
+    fetch("/api/users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          dispatch(setUsers(data));
+        }
+      })
+      .catch(() => {});
+  }, [dispatch]);
+
   useEffect(() => {
     if (activeMessages.length > 0) {
       const latest = activeMessages[activeMessages.length - 1];
@@ -38,25 +51,30 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Connect socket on mount with current user identity
-    const socket = socketService.connect(currentUser.id);
+    // Connect socket on mount with full user identity
+    const socket = socketService.connect(currentUser);
 
-    // If socket is already connected from previous instance
     if (socket.connected) {
       dispatch(setConnectionStatus("connected"));
     }
 
-    // Set connection status to connected quickly with local fallback guard
     const fallbackTimer = setTimeout(() => {
       dispatch(setConnectionStatus("connected"));
     }, 1500);
 
     socket.on("connect", () => {
       clearTimeout(fallbackTimer);
-      console.log(`[Socket Connected] User: ${currentUser.name}`);
       dispatch(setConnectionStatus("connected"));
 
+      // Request current registered users
+      socket.emit("users:get", (usersList: any[]) => {
+        if (Array.isArray(usersList)) {
+          dispatch(setUsers(usersList));
+        }
+      });
+
       if (activeConvId) {
+        socketService.joinRoom(activeConvId);
         socketService
           .syncMessages({
             conversationId: activeConvId,
@@ -67,6 +85,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
               dispatch(setMessages(response.messages));
             }
           });
+      }
+    });
+
+    socket.on("users:update", (updatedUsers: any[]) => {
+      if (Array.isArray(updatedUsers)) {
+        dispatch(setUsers(updatedUsers));
       }
     });
 
@@ -105,15 +129,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
-    // ----------------------------------------------------
-    // Cross-tab BroadcastChannel for 0ms multi-tab sync
-    // ----------------------------------------------------
+    // Cross-tab broadcast channel
     let broadcastChannel: BroadcastChannel | null = null;
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
       broadcastChannel = new BroadcastChannel("simuphish_tab_sync");
       broadcastChannel.onmessage = (event) => {
         const { type, data } = event.data || {};
-        if (type === "message:new" && data) {
+        if (type === "user:registered" && data) {
+          dispatch(addUser(data));
+        } else if (type === "message:new" && data) {
           dispatch(setMessages([data]));
           dispatch(
             updateLastMessage({

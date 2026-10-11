@@ -7,6 +7,7 @@ import {
   SyncRequestPayload,
   SyncResponsePayload,
 } from "@/types/socket";
+import { User } from "@/types/chat";
 import { io, Socket } from "socket.io-client";
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -22,8 +23,8 @@ class SocketService {
     }
   }
 
-  public connect(userId: string): TypedSocket {
-    if (this.socket && this.currentUserId === userId && this.socket.connected) {
+  public connect(user: User): TypedSocket {
+    if (this.socket && this.currentUserId === user.id && this.socket.connected) {
       return this.socket;
     }
 
@@ -31,13 +32,14 @@ class SocketService {
       this.socket.disconnect();
     }
 
-    this.currentUserId = userId;
+    this.currentUserId = user.id;
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4001";
 
     this.socket = io(socketUrl, {
       auth: {
-        userId,
-        token: `simuphish-session-${userId}`,
+        userId: user.id,
+        user: user,
+        token: `simuphish-session-${user.id}`,
       },
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -47,6 +49,12 @@ class SocketService {
     });
 
     return this.socket;
+  }
+
+  public joinRoom(conversationId: string): void {
+    if (this.socket && this.socket.connected) {
+      this.socket.emit("room:join", { conversationId });
+    }
   }
 
   public getSocket(): TypedSocket | null {
@@ -79,7 +87,6 @@ class SocketService {
         replyToId: payload.replyToId || null,
       };
 
-      // Broadcast to other local browser tabs immediately
       if (this.broadcastChannel) {
         this.broadcastChannel.postMessage({
           type: "message:new",

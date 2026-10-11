@@ -71,6 +71,8 @@ export interface ClientToServerEvents {
     userName: string;
   }) => void;
   "typing:stop": (payload: { conversationId: string; userId: string }) => void;
+  "room:join": (payload: { conversationId: string }) => void;
+  "users:get": (callback: (users: any[]) => void) => void;
 }
 
 export interface ServerToClientEvents {
@@ -78,4 +80,5 @@ export interface ServerToClientEvents {
   "message:ack": (ack: MessageAck) => void;
   "typing:update": (payload: TypingUpdatePayload) => void;
   "user:status": (payload: UserStatusPayload) => void;
+  "users:update": (users: any[]) => void;
 }

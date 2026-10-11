@@ -29,9 +29,9 @@ export const conversationsSlice = createSlice({
     setConversations: (state, action: PayloadAction<Conversation[]>) => {
       conversationsAdapter.setAll(state, action.payload);
       state.status = "succeeded";
-      if (!state.activeConversationId && action.payload.length > 0) {
-        state.activeConversationId = action.payload[0].id;
-      }
+    },
+    upsertConversation: (state, action: PayloadAction<Conversation>) => {
+      conversationsAdapter.upsertOne(state, action.payload);
     },
     setActiveConversationId: (state, action: PayloadAction<string>) => {
       state.activeConversationId = action.payload;
@@ -66,6 +66,7 @@ export const conversationsSlice = createSlice({
 
 export const {
   setConversations,
+  upsertConversation,
   setActiveConversationId,
   updateLastMessage,
 } = conversationsSlice.actions;

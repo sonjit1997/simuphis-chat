@@ -2,7 +2,11 @@
 
 import { socketService } from "@/services/socketService";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { updateLastMessage } from "@/store/slices/conversationsSlice";
+import {
+  setActiveConversationId,
+  updateLastMessage,
+  upsertConversation,
+} from "@/store/slices/conversationsSlice";
 import {
   addOptimisticMessage,
   confirmMessageSent,
@@ -24,6 +28,7 @@ interface ChatContainerProps {
 export function ChatContainer({ conversationId }: ChatContainerProps) {
   const dispatch = useAppDispatch();
   const currentUser = useAppSelector((state) => state.auth.currentUser);
+  const registeredUsers = useAppSelector((state) => state.users.users);
 
   const [replyingTo, setReplyingTo] = useState<GroupedMessage | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -33,13 +38,31 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
 
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
 
+  // Initialize conversation and join room
   useEffect(() => {
-    return () => {
-      if (uploadAbortControllerRef.current) {
-        uploadAbortControllerRef.current.abort();
+    dispatch(setActiveConversationId(conversationId));
+
+    if (conversationId.includes("--") && currentUser) {
+      const otherId = conversationId.split("--").find((id) => id !== currentUser.id);
+      const partner = registeredUsers.find((u) => u.id === otherId);
+      if (partner) {
+        dispatch(
+          upsertConversation({
+            id: conversationId,
+            type: "direct",
+            name: partner.name,
+            avatarUrl: partner.avatarUrl,
+            participantIds: [currentUser.id, partner.id],
+            participants: [currentUser, partner],
+            unreadCount: 0,
+            updatedAt: new Date().toISOString(),
+          })
+        );
       }
-    };
-  }, []);
+    }
+
+    socketService.joinRoom(conversationId);
+  }, [conversationId, currentUser, registeredUsers, dispatch]);
 
   const handleCancelUpload = useCallback(() => {
     if (uploadAbortControllerRef.current) {
@@ -50,98 +73,6 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     setUploadProgress(null);
     setUploadError(null);
   }, []);
-
-  const handleUploadFile = useCallback(
-    async (file: File) => {
-      setUploadStatus("uploading");
-      setUploadProgress(10);
-      setUploadError(null);
-
-      uploadAbortControllerRef.current = new AbortController();
-
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const progressInterval = setInterval(() => {
-          setUploadProgress((prev) => (prev && prev < 85 ? prev + 15 : prev));
-        }, 200);
-
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-          signal: uploadAbortControllerRef.current.signal,
-        });
-
-        clearInterval(progressInterval);
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "Upload failed");
-        }
-
-        const data = await response.json();
-        setUploadProgress(100);
-        setUploadStatus("success");
-
-        await handleSendMessage(file.name, null, {
-          mediaUrl: data.mediaUrl,
-          fileName: data.fileName,
-          type: data.type as MessageType,
-          fileSize: data.fileSize,
-        });
-
-        setTimeout(() => {
-          setUploadStatus("idle");
-          setUploadProgress(null);
-        }, 1000);
-      } catch (err: any) {
-        if (err.name === "AbortError") {
-          console.log("[Upload Aborted by User via AbortController]");
-          setUploadStatus("idle");
-          setUploadProgress(null);
-          return;
-        }
-
-        console.error("[Upload Error]:", err);
-        setUploadStatus("error");
-        setUploadError(err.message || "Failed to upload file");
-      } finally {
-        uploadAbortControllerRef.current = null;
-      }
-    },
-    [conversationId, currentUser]
-  );
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDraggingOver(true);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes("Files")) {
-      e.dataTransfer.dropEffect = "copy";
-      setIsDraggingOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setIsDraggingOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
-
-    const droppedFiles = e.dataTransfer.files;
-    if (droppedFiles && droppedFiles.length > 0) {
-      handleUploadFile(droppedFiles[0]);
-    }
-  };
 
   const handleSendMessage = async (
     content: string,
@@ -218,6 +149,92 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
     }
   };
 
+  const handleUploadFile = useCallback(
+    async (file: File) => {
+      setUploadStatus("uploading");
+      setUploadProgress(10);
+      setUploadError(null);
+
+      uploadAbortControllerRef.current = new AbortController();
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => (prev && prev < 85 ? prev + 15 : prev));
+        }, 200);
+
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+          signal: uploadAbortControllerRef.current.signal,
+        });
+
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || "Upload failed");
+        }
+
+        const data = await response.json();
+        setUploadProgress(100);
+        setUploadStatus("success");
+
+        await handleSendMessage(file.name, null, {
+          mediaUrl: data.mediaUrl,
+          fileName: data.fileName,
+          type: data.type as MessageType,
+          fileSize: data.fileSize,
+        });
+
+        setTimeout(() => {
+          setUploadStatus("idle");
+          setUploadProgress(null);
+        }, 1000);
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          setUploadStatus("idle");
+          setUploadProgress(null);
+          return;
+        }
+        setUploadStatus("error");
+        setUploadError(err.message || "Failed to upload file");
+      } finally {
+        uploadAbortControllerRef.current = null;
+      }
+    },
+    [conversationId, currentUser]
+  );
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) setIsDraggingOver(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      e.dataTransfer.dropEffect = "copy";
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      handleUploadFile(droppedFiles[0]);
+    }
+  };
+
   const handleForwardConfirm = async (
     targetConversationId: string,
     originalMessageId: string
@@ -241,23 +258,27 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
       onDrop={handleDrop}
       className="flex-1 h-screen flex flex-col bg-[#070b13] relative overflow-hidden"
     >
-      <MediaUploadOverlay isDraggingOver={isDraggingOver} />
       <ChatHeader />
+
       <MessageList
         currentUserId={currentUser?.id || ""}
         onReply={(msg) => setReplyingTo(msg)}
         onForward={(msg) => dispatch(setForwardModalMessageId(msg.id))}
       />
+
       <Composer
-        onSendMessage={handleSendMessage}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
+        onSendMessage={handleSendMessage}
         onUploadFile={handleUploadFile}
         onCancelUpload={handleCancelUpload}
         uploadProgress={uploadProgress}
         uploadStatus={uploadStatus}
         uploadError={uploadError}
       />
+
+      <MediaUploadOverlay isDraggingOver={isDraggingOver} />
+
       <ForwardModal onForwardConfirm={handleForwardConfirm} />
     </div>
   );

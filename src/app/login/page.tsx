@@ -1,26 +1,46 @@
 "use client";
 
 import { signInWithGoogle } from "@/lib/firebase";
-import { CONTACT_USERS, CURRENT_USER } from "@/mock/initialData";
 import { useAppDispatch } from "@/store/hooks";
 import { setCurrentUser } from "@/store/slices/authSlice";
 import { User } from "@/types/chat";
-import { ShieldCheck, Sparkles, UserCheck } from "lucide-react";
-import Image from "next/image";
+import { Mail, ShieldCheck, Sparkles, User as UserIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 
 export default function LoginPage() {
   const dispatch = useAppDispatch();
   const router = useRouter();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const saveUserSession = (user: User) => {
+  // Email login form state
+  const [emailName, setEmailName] = useState("");
+  const [emailAddress, setEmailAddress] = useState("");
+
+  const saveUserSession = async (user: User) => {
     // Set 7-day session cookie for Next.js middleware protection
     document.cookie = `simuphish_session=${user.id}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+
+    // Persist user to directory
+    try {
+      await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(user),
+      });
+    } catch {}
+
+    // Broadcast across tabs
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("simuphish_tab_sync");
+      bc.postMessage({ type: "user:registered", data: user });
+      bc.close();
+    }
+
     dispatch(setCurrentUser(user));
-    router.push("/conv-1");
+    router.push("/");
   };
 
   const handleGoogleSignIn = async () => {
@@ -28,20 +48,45 @@ export default function LoginPage() {
     setError(null);
     try {
       const user = await signInWithGoogle();
-      saveUserSession(user);
+      await saveUserSession(user);
     } catch (err: any) {
       console.error(err);
-      setError("Google Sign-In was cancelled or failed. You can also select a test persona below.");
+      setError("Google Sign-In failed or was cancelled. Please try again or sign in with email below.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectPersona = (user: User) => {
-    saveUserSession(user);
-  };
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailAddress.trim()) {
+      setError("Please enter a valid email address.");
+      return;
+    }
 
-  const availablePersonas = [CURRENT_USER, ...CONTACT_USERS.slice(0, 2)];
+    setLoading(true);
+    setError(null);
+
+    const cleanEmail = emailAddress.trim().toLowerCase();
+    const cleanName = emailName.trim() || cleanEmail.split("@")[0];
+    const userId = "usr_" + cleanEmail.replace(/[^a-zA-Z0-9]/g, "_");
+
+    const emailUser: User = {
+      id: userId,
+      name: cleanName,
+      email: cleanEmail,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`,
+      status: "online",
+    };
+
+    try {
+      await saveUserSession(emailUser);
+    } catch (err: any) {
+      setError("Failed to sign in. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen w-screen bg-[#070b13] flex items-center justify-center p-4 relative overflow-hidden">
@@ -62,11 +107,11 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Google Sign In Button */}
+        {/* Primary Google Sign In */}
         <button
           onClick={handleGoogleSignIn}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-sm shadow-md transition-all active:scale-[0.99] disabled:opacity-60 mb-6 cursor-pointer"
+          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-sm shadow-md transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -90,7 +135,7 @@ export default function LoginPage() {
         </button>
 
         {error && (
-          <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-xl mb-4 text-center">
+          <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-500/30 p-2.5 rounded-xl my-4 text-center">
             {error}
           </p>
         )}
@@ -98,45 +143,58 @@ export default function LoginPage() {
         <div className="flex items-center my-6">
           <div className="flex-1 border-t border-slate-800" />
           <span className="px-3 text-[11px] font-mono text-slate-500 uppercase tracking-wider">
-            Or select test persona
+            Or sign in with email
           </span>
           <div className="flex-1 border-t border-slate-800" />
         </div>
 
-        {/* Quick Persona Selector for Multi-Tab & Evaluator Testing */}
-        <div className="space-y-2">
-          {availablePersonas.map((persona) => (
-            <button
-              key={persona.id}
-              onClick={() => handleSelectPersona(persona)}
-              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 transition-all text-left group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 border border-slate-700/60">
-                  <Image
-                    src={persona.avatarUrl}
-                    alt={persona.name}
-                    width={40}
-                    height={40}
-                    className="w-full h-full object-cover"
-                    unoptimized
-                  />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-200 group-hover:text-indigo-400 transition-colors">
-                    {persona.name}
-                  </h3>
-                  <p className="text-[11px] text-slate-400">{persona.email}</p>
-                </div>
-              </div>
-              <UserCheck className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition-colors" />
-            </button>
-          ))}
-        </div>
+        {/* Real Email Sign-In Form */}
+        <form onSubmit={handleEmailSignIn} className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">
+              Full Name
+            </label>
+            <div className="relative">
+              <UserIcon className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={emailName}
+                onChange={(e) => setEmailName(e.target.value)}
+                placeholder="e.g. Alex Rivera"
+                className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">
+              Email Address <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                required
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                placeholder="e.g. alex@company.com"
+                className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !emailAddress.trim()}
+            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-indigo-600/20 mt-2"
+          >
+            {loading ? "Signing in..." : "Continue with Email"}
+          </button>
+        </form>
 
         <div className="mt-8 pt-4 border-t border-slate-800/80 text-center text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          Open in 2 tabs to test bi-directional real-time messaging!
+          Sign in from 2 windows to start real-time messaging!
         </div>
       </div>
     </div>

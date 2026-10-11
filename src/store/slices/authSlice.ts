@@ -1,5 +1,4 @@
 import { User } from "@/types/chat";
-import { CURRENT_USER } from "@/mock/initialData";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 interface AuthState {
@@ -8,7 +7,7 @@ interface AuthState {
 }
 
 const getInitialUser = (): User | null => {
-  if (typeof window === "undefined") return CURRENT_USER;
+  if (typeof window === "undefined") return null;
   try {
     const hasSessionCookie = document.cookie.includes("simuphish_session=");
     if (!hasSessionCookie) return null;

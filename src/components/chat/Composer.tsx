@@ -9,7 +9,6 @@ import {
 } from "@/store/selectors/chatSelectors";
 import { clearDraft, setDraft } from "@/store/slices/draftsSlice";
 import { GroupedMessage } from "@/types/chat";
-import { CURRENT_USER } from "@/mock/initialData";
 import {
   AlertCircle,
   Paperclip,
@@ -49,6 +48,7 @@ export function Composer({
   const dispatch = useAppDispatch();
   const activeConvId = useAppSelector(selectActiveConversationId);
   const activeDraft = useAppSelector(selectActiveDraft);
+  const currentUser = useAppSelector((state) => state.auth?.currentUser);
 
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -64,12 +64,12 @@ export function Composer({
   const { handleKeyPress, forceStop } = useTypingDebounce({
     onStartTyping: () => {
       if (activeConvId) {
-        socketService.startTyping(activeConvId, CURRENT_USER.id, CURRENT_USER.name);
+        if (currentUser) socketService.startTyping(activeConvId, currentUser.id, currentUser.name);
       }
     },
     onStopTyping: () => {
       if (activeConvId) {
-        socketService.stopTyping(activeConvId, CURRENT_USER.id);
+        if (currentUser) socketService.stopTyping(activeConvId, currentUser.id);
       }
     },
   });

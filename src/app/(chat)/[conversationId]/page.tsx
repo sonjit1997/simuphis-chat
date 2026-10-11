@@ -1,13 +1,5 @@
 import { ChatContainer } from "@/components/chat/ChatContainer";
-import { Suspense } from "react";
-
-export function generateStaticParams() {
-  return [
-    { conversationId: "conv-1" },
-    { conversationId: "conv-2" },
-    { conversationId: "conv-3" },
-  ];
-}
+import { Suspense, use } from "react";
 
 interface ConversationPageProps {
   params: Promise<{
@@ -15,11 +7,12 @@ interface ConversationPageProps {
   }>;
 }
 
-export default async function ConversationPage({
-  params,
-}: ConversationPageProps) {
-  const { conversationId } = await params;
+function ConversationContent({ params }: ConversationPageProps) {
+  const { conversationId } = use(params);
+  return <ChatContainer conversationId={conversationId} />;
+}
 
+export default function ConversationPage({ params }: ConversationPageProps) {
   return (
     <Suspense
       fallback={
@@ -28,7 +21,7 @@ export default async function ConversationPage({
         </div>
       }
     >
-      <ChatContainer conversationId={conversationId} />
+      <ConversationContent params={params} />
     </Suspense>
   );
 }

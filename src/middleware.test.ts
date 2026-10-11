@@ -9,8 +9,8 @@ describe("Authentication Guard Middleware", () => {
     expect(res.headers.get("location")).toBe("http://localhost:3000/login");
   });
 
-  it("redirects unauthenticated user visiting /conv-1 to /login", () => {
-    const req = new NextRequest("http://localhost:3000/conv-1");
+  it("redirects unauthenticated user visiting /any-conv to /login", () => {
+    const req = new NextRequest("http://localhost:3000/usr_1--usr_2");
     const res = middleware(req);
     expect(res.headers.get("location")).toBe("http://localhost:3000/login");
   });
@@ -21,18 +21,18 @@ describe("Authentication Guard Middleware", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("redirects authenticated user visiting /login to /conv-1", () => {
+  it("redirects authenticated user visiting /login to /", () => {
     const req = new NextRequest("http://localhost:3000/login", {
       headers: {
         cookie: "simuphish_session=user-1",
       },
     });
     const res = middleware(req);
-    expect(res.headers.get("location")).toBe("http://localhost:3000/conv-1");
+    expect(res.headers.get("location")).toBe("http://localhost:3000/");
   });
 
-  it("allows authenticated user visiting /conv-1", () => {
-    const req = new NextRequest("http://localhost:3000/conv-1", {
+  it("allows authenticated user visiting /", () => {
+    const req = new NextRequest("http://localhost:3000/", {
       headers: {
         cookie: "simuphish_session=user-1",
       },

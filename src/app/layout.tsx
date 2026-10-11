@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { StoreProvider } from "@/store/StoreProvider";
-import { INITIAL_CONVERSATIONS, INITIAL_MESSAGES } from "@/mock/initialData";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,18 +23,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const initialMessages = Object.values(INITIAL_MESSAGES).flat();
-
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#090d16] text-[#f1f5f9]">
-        <StoreProvider
-          initialConversations={INITIAL_CONVERSATIONS}
-          initialMessages={initialMessages}
-        >
+        <StoreProvider>
           {children}
         </StoreProvider>
       </body>

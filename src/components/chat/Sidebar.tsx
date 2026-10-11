@@ -3,14 +3,16 @@
 import { signOutFromFirebase } from "@/lib/firebase";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
-  selectAllConversations,
   selectActiveConversationId,
+  selectConversationEntities,
 } from "@/store/selectors/chatSelectors";
 import { logout } from "@/store/slices/authSlice";
-import { setActiveConversationId } from "@/store/slices/conversationsSlice";
-import { getConversationDisplayMeta } from "@/utils/conversationUtils";
+import {
+  setActiveConversationId,
+  upsertConversation,
+} from "@/store/slices/conversationsSlice";
 import { formatConversationTime } from "@/utils/dateFormatters";
-import { LogOut, MessageSquare, Search, ShieldCheck, Users } from "lucide-react";
+import { LogOut, MessageSquare, Search, ShieldCheck, UserPlus, Users } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,35 +25,45 @@ interface SidebarProps {
 export function Sidebar({ onForwardDrop }: SidebarProps) {
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const conversations = useAppSelector(selectAllConversations);
-  const activeId = useAppSelector(selectActiveConversationId);
+
   const currentUser = useAppSelector((state) => state.auth.currentUser);
+  const registeredUsers = useAppSelector((state) => state.users.users);
+  const conversationsMap = useAppSelector(selectConversationEntities);
+  const activeId = useAppSelector(selectActiveConversationId);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const filteredConversations = conversations.filter((c) => {
-    const meta = getConversationDisplayMeta(c, currentUser);
-    return meta.name.toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  // Show only OTHER real registered persons
+  const otherUsers = registeredUsers.filter(
+    (u) => u.id !== currentUser?.id
+  );
 
-  const handleDragOver = (e: React.DragEvent, convId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setDragOverId(convId);
-  };
+  const filteredUsers = otherUsers.filter(
+    (u) =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const handleDragLeave = () => {
-    setDragOverId(null);
-  };
+  const handleSelectUser = (partner: typeof otherUsers[0]) => {
+    if (!currentUser) return;
+    const convId = [currentUser.id, partner.id].sort().join("--");
 
-  const handleDrop = (e: React.DragEvent, convId: string) => {
-    e.preventDefault();
-    setDragOverId(null);
-    const messageId = e.dataTransfer.getData("text/plain");
-    if (messageId && onForwardDrop) {
-      onForwardDrop(convId);
-    }
+    // Upsert conversation entity in store
+    dispatch(
+      upsertConversation({
+        id: convId,
+        type: "direct",
+        name: partner.name,
+        avatarUrl: partner.avatarUrl,
+        participantIds: [currentUser.id, partner.id],
+        participants: [currentUser, partner],
+        unreadCount: 0,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
+    dispatch(setActiveConversationId(convId));
   };
 
   const handleLogout = async () => {
@@ -89,32 +101,45 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search contacts & chats..."
-            aria-label="Search conversations"
+            placeholder="Search registered people..."
+            aria-label="Search people"
             className="w-full pl-9 pr-3 py-2 bg-slate-900/90 text-sm text-slate-200 placeholder-slate-500 rounded-lg border border-slate-800 focus:outline-none focus:border-indigo-500/50 transition-colors"
           />
         </div>
       </div>
 
-      {/* Conversation List */}
+      {/* Real Contact List */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1">
-        <div className="px-2 py-1 text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-          Direct Messages & Teams ({filteredConversations.length})
+        <div className="px-2 py-1 text-[11px] font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
+          <span>People ({filteredUsers.length})</span>
+          <span className="text-[10px] font-mono text-emerald-400">
+            {otherUsers.filter((u) => u.status === "online").length} online
+          </span>
         </div>
 
-        {filteredConversations.map((conv) => {
-          const meta = getConversationDisplayMeta(conv, currentUser);
-          const isActive = conv.id === activeId;
-          const isDropTarget = dragOverId === conv.id;
+        {filteredUsers.map((partner) => {
+          if (!currentUser) return null;
+          const convId = [currentUser.id, partner.id].sort().join("--");
+          const conv = conversationsMap[convId];
+          const isActive = convId === activeId;
+          const isDropTarget = dragOverId === convId;
 
           return (
             <Link
-              key={conv.id}
-              href={`/${conv.id}`}
-              onClick={() => dispatch(setActiveConversationId(conv.id))}
-              onDragOver={(e) => handleDragOver(e, conv.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, conv.id)}
+              key={partner.id}
+              href={`/${convId}`}
+              onClick={() => handleSelectUser(partner)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverId(convId);
+              }}
+              onDragLeave={() => setDragOverId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverId(null);
+                const msgId = e.dataTransfer.getData("text/plain");
+                if (msgId && onForwardDrop) onForwardDrop(convId);
+              }}
               className={`flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 relative group ${
                 isActive
                   ? "bg-slate-800/90 text-white shadow-sm border border-slate-700/60"
@@ -124,10 +149,10 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
               {/* Avatar */}
               <div className="relative flex-shrink-0">
                 <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50">
-                  {meta.avatarUrl ? (
+                  {partner.avatarUrl ? (
                     <Image
-                      src={meta.avatarUrl}
-                      alt={meta.name}
+                      src={partner.avatarUrl}
+                      alt={partner.name}
                       width={44}
                       height={44}
                       className="object-cover w-full h-full"
@@ -135,27 +160,25 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center font-bold text-slate-300">
-                      {meta.name.charAt(0)}
+                      {partner.name.charAt(0)}
                     </div>
                   )}
                 </div>
-                {meta.isGroup ? (
-                  <span className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-slate-900 rounded-full border border-slate-700">
-                    <Users className="w-3 h-3 text-indigo-400" />
-                  </span>
-                ) : (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900" />
-                )}
+                <span
+                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${
+                    partner.status === "online" ? "bg-emerald-500" : "bg-slate-500"
+                  }`}
+                />
               </div>
 
               {/* Text Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
                   <h2 className="text-sm font-medium truncate text-slate-100">
-                    {meta.name}
+                    {partner.name}
                   </h2>
                   <span className="text-[11px] text-slate-500 font-mono">
-                    {conv.lastMessage
+                    {conv?.lastMessage
                       ? formatConversationTime(conv.lastMessage.createdAt)
                       : ""}
                   </span>
@@ -163,12 +186,12 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-400 truncate">
-                    {conv.lastMessage
+                    {conv?.lastMessage
                       ? `${conv.lastMessage.senderName}: ${conv.lastMessage.content}`
-                      : "No messages yet"}
+                      : partner.email}
                   </p>
 
-                  {conv.unreadCount > 0 && (
+                  {conv && conv.unreadCount > 0 && (
                     <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-500 text-white min-w-4 text-center">
                       {conv.unreadCount}
                     </span>
@@ -179,15 +202,18 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
           );
         })}
 
-        {filteredConversations.length === 0 && (
-          <div className="p-8 text-center text-slate-500 text-sm">
-            <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            No conversations found
+        {filteredUsers.length === 0 && (
+          <div className="p-8 text-center text-slate-500 text-xs space-y-2">
+            <UserPlus className="w-8 h-8 mx-auto mb-1 opacity-40 text-indigo-400" />
+            <p className="font-semibold text-slate-300">No other users online yet</p>
+            <p className="text-slate-400 max-w-xs mx-auto text-[11px]">
+              Open another window or have a colleague sign in with Google or Email to start chatting!
+            </p>
           </div>
         )}
       </div>
 
-      {/* Current User Profile Footer */}
+      {/* Logged-In User Profile & Sign Out Footer */}
       {currentUser && (
         <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -223,7 +249,7 @@ export function Sidebar({ onForwardDrop }: SidebarProps) {
 
           <button
             onClick={handleLogout}
-            title="Sign out / Switch user"
+            title="Sign out"
             aria-label="Sign out"
             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
           >
