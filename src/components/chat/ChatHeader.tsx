@@ -18,10 +18,10 @@ export function ChatHeader() {
   if (!conversation) return null;
 
   return (
-    <header className="h-16 px-6 bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800 flex items-center justify-between z-10">
+    <header className="h-16 px-6 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between z-10 shadow-sm">
       <div className="flex items-center gap-3.5">
         <div className="relative">
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 border border-slate-700/60">
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 border border-slate-700/60 shadow">
             {conversation.avatarUrl ? (
               <Image
                 src={conversation.avatarUrl}
@@ -45,9 +45,14 @@ export function ChatHeader() {
 
           <div className="flex items-center gap-2 text-xs">
             {typingUsers.length > 0 ? (
-              <span className="text-indigo-400 animate-pulse font-medium">
-                {typingUsers.map((u) => u.userName).join(", ")} is typing...
-              </span>
+              <div className="flex items-center gap-1.5 text-indigo-400 font-medium">
+                <span>{typingUsers.map((u) => u.userName).join(", ")} is typing</span>
+                <span className="flex items-center gap-0.5 mt-0.5">
+                  <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" />
+                </span>
+              </div>
             ) : (
               <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
                 <Circle
@@ -66,22 +71,24 @@ export function ChatHeader() {
         </div>
       </div>
 
-      {/* Action Icons */}
       <div className="flex items-center gap-2 text-slate-400">
         <button
           title="Voice call"
+          aria-label="Voice call"
           className="p-2 hover:bg-slate-800 rounded-lg hover:text-slate-200 transition-colors"
         >
           <Phone className="w-4 h-4" />
         </button>
         <button
           title="Video call"
+          aria-label="Video call"
           className="p-2 hover:bg-slate-800 rounded-lg hover:text-slate-200 transition-colors"
         >
           <Video className="w-4 h-4" />
         </button>
         <button
           title="Conversation details"
+          aria-label="Conversation details"
           className="p-2 hover:bg-slate-800 rounded-lg hover:text-slate-200 transition-colors"
         >
           <Info className="w-4 h-4" />
